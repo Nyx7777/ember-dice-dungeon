@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import {mkdir,writeFile,readFile} from 'node:fs/promises';
 import {newRun,dispatch,serialize,deserialize} from '../dist/engine.js';
 import {nextAction} from './helpers.mjs';
+import {checkEffects} from './effects-browser.mjs';
+import {checkCacheUpdate} from './cache-update.mjs';
 const browser=await chromium.launch({channel:'msedge',headless:true});
 const dir='test-results';await mkdir(dir,{recursive:true});
 const results=[],errors=[];
@@ -10,7 +12,7 @@ const context=await browser.newContext({viewport:{width:390,height:844},isMobile
 const page=await context.newPage();page.on('pageerror',e=>errors.push(String(e)));
 const key='ember-dungeon-save-v1';
 const read=async()=>JSON.parse(await page.evaluate(key=>localStorage.getItem(key),key));
-const click=async(action)=>{const scope=await page.locator('#modal').isVisible()?page.locator('#modal'):page;await scope.locator(`[data-action="${action}"]:not(:disabled)`).first().click();};
+const click=async(action)=>{await page.waitForFunction(()=>!document.querySelector('#app').inert);const scope=await page.locator('#modal').isVisible()?page.locator('#modal'):page;await scope.locator(`[data-action="${action}"]:not(:disabled)`).first().click();await page.waitForFunction(()=>!document.querySelector('#app').inert);};
 try{
   await page.goto('http://localhost:4173');await page.locator('[data-action="new"]').waitFor();
   await page.screenshot({path:`${dir}/home-390.png`,fullPage:true});
@@ -27,6 +29,7 @@ try{
   }
   await page.setViewportSize({width:390,height:844});
   await click('allocate');await click('skill:cleave');const preCancel=await read();await click('close');assert.deepEqual(await read(),preCancel);results.push('Skill preview cancellation has no state or RNG effects.');
+  await checkEffects(page,results);
   // Reset to a known genuine run, then execute every action through actual UI controls.
   await page.evaluate(([key,raw])=>localStorage.setItem(key,raw),[key,serialize(newRun(1))]);await page.reload();
   let count=0;
@@ -58,6 +61,7 @@ try{
   let dead=dispatch(newRun(9),{type:'enter',index:0});while(dead.screen==='battle')dead=dispatch(dead,{type:'end'});
   await page.evaluate(([key,raw])=>localStorage.setItem(key,raw),[key,serialize(dead)]);await page.reload();assert.equal(await page.locator('.result h1').textContent(),'余烬，仍未散尽。');
   await click('restart');await click('confirm-new');assert.equal((await read()).floor,0);assert.equal((await read()).hp,60);results.push('Defeat screen and confirmed restart reset progress.');
+  await checkCacheUpdate(browser,results);
   assert.deepEqual(errors,[]);results.push('No browser JavaScript errors.');
   const report={browser:await browser.version(),platform:process.platform,results,errors};await writeFile(`${dir}/browser-report.json`,JSON.stringify(report,null,2));console.log(JSON.stringify(report,null,2));
 }catch(e){await page.screenshot({path:`${dir}/browser-failure.png`,fullPage:true});await writeFile(`${dir}/browser-failure.txt`,String(e.stack));throw e;}finally{await browser.close();}
