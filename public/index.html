@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#131c1b" />
+  <meta name="description" content="六枚命骰，两次抉择。竖屏单人骰子肉鸽游戏，走过灰烬地城，挑战铸命者。" />
+  <link rel="manifest" href="./manifest.webmanifest" />
+  <link rel="icon" href="./icon.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="./style.css" />
+  <title>骰子地下城 · 余烬之旅</title>
+</head>
+<body>
+  <div class="desktop-note"><span class="brand-mark">⟐</span><strong>骰子地下城</strong><span>六枚命骰 · 两次抉择</span><small>EMBER / CHAPTER 01</small></div>
+  <main id="app" aria-label="骰子地下城"></main>
+  <dialog id="modal" aria-label="详情"></dialog>
+  <div id="toast" role="status" aria-live="polite"></div>
+  <input id="import-file" type="file" accept="application/json,.json" hidden />
+  <noscript>游戏需要启用 JavaScript。所有进度只保存在此设备。</noscript>
+  <script type="module" src="./app.js"></script>
+</body>
+</html>
