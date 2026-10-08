@@ -1,4 +1,5 @@
 export type Face = 'sword' | 'shield' | 'fire';
+export const TACTICS_PER_TURN = 1;
 export type SkillId = 'slash' | 'guard' | 'bash' | 'burn' | 'cleave' | 'inferno';
 export type CardId = 'retry' | 'calibrate' | 'armor' | 'momentum';
 export type EnemyId = 'hunter' | 'giant' | 'warden' | 'priest' | 'elite' | 'boss';
@@ -22,9 +23,9 @@ export const UPGRADES: Record<SkillId, [Partial<Skill>, Partial<Skill>]> = {
   inferno: [{ name: '引火', cost: ['fire','fire','fire','fire','sword'] }, { name: '终焉', damage: 36 }],
 };
 export const CARDS: Record<CardId, { name: string; cost: number; text: string; target?: boolean }> = {
-  retry: { name: '再试一次', cost: 1, text: '重掷指定的一枚骰子，解除其保留。不占普通重掷次数。', target: true },
-  calibrate: { name: '定向校准', cost: 2, text: '将指定骰子本回合的符号改为剑、盾或焰。', target: true },
-  armor: { name: '应急护甲', cost: 1, text: '立即获得 4 格挡。本回合最多使用两张战术牌。' },
+  retry: { name: '再试一次', cost: 1, text: '重掷指定的一枚未消耗骰子，解除其保留。不占普通重掷次数。', target: true },
+  calibrate: { name: '定向校准', cost: 2, text: '将指定的未消耗骰子本回合的符号改为剑、盾或焰。', target: true },
+  armor: { name: '应急护甲', cost: 1, text: '立即获得 4 格挡。' },
   momentum: { name: '借势一击', cost: 1, text: '本回合下一次攻击主技能伤害 +3。多个加成相加。' },
 };
 export interface Intent { name: string; attacks: number[]; block: number; tax?: number }

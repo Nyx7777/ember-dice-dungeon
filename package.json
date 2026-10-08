@@ -1,13 +1,13 @@
 {
   "name": "ember-dice-dungeon",
-  "version": "0.2.0",
+  "version": "0.3.2",
   "private": true,
   "type": "module",
   "scripts": {
     "dev": "node scripts/serve.mjs",
     "build": "tsc && node scripts/build.mjs",
     "test": "npm run build && node --test tests/*.test.mjs",
-    "test:browser": "node tests/browser.mjs"
+    "test:browser": "node tests/browser.mjs && node tests/layout-browser.mjs"
   },
   "devDependencies": { "typescript": "~5.9.3", "@playwright/test": "~1.56.1" }
 }

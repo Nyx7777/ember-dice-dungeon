@@ -1,5 +1,5 @@
 import {newRun,dispatch,payment,canSkill,preview,symbol,skillFor} from '../dist/engine.js';
-import {SKILLS,CARDS} from '../dist/data.js';
+import {SKILLS,CARDS,TACTICS_PER_TURN} from '../dist/data.js';
 export function battle(faces=['sword','sword','sword','shield','shield','fire'],enemy='hunter') {
   let s=dispatch(newRun(42),{type:'enter',index:0});
   s=dispatch(s,{type:'roll'});s=dispatch(s,{type:'allocate'});
@@ -29,7 +29,7 @@ export function nextAction(s){
     }
     return {type:'allocate'};
   }
-  if(!b.used.length&&b.cardsUsed<2){
+  if(!b.used.length&&b.cardsUsed<TACTICS_PER_TURN){
     const c=b.hand.find(c=>b.tp>=CARDS[c.kind].cost&&(c.kind==='armor'&&b.intent.attacks.length||c.kind==='momentum'));
     if(c)return {type:'card',id:c.id};
   }

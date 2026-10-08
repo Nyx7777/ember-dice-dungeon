@@ -8,7 +8,7 @@ import {newRun,serialize} from '../dist/engine.js';
 // Serve both worker versions from the same origin and Pages-style subdirectory.
 export async function checkCacheUpdate(browser,results){
   const current=await readFile('dist/sw.js','utf8');
-  let worker=current.replace('ember-demo-0.2.0-fx1','ember-demo-0.2.0').replace("'./effects.js',",'');
+  let worker=current.replace('ember-demo-0.3.2-reroll1','ember-demo-0.3.1-tactics1');
   const prefix='/ember-dice-dungeon/', base=path.resolve('dist');
   const server=http.createServer(async(req,res)=>{
     try{
@@ -26,18 +26,18 @@ export async function checkCacheUpdate(browser,results){
   page.on('pageerror',e=>errors.push(String(e)));
   try{
     await page.goto(`http://127.0.0.1:${server.address().port}${prefix}`);
-    await expect.poll(()=>page.evaluate(async()=>!!navigator.serviceWorker.controller&&await caches.has('ember-demo-0.2.0')),{timeout:15000}).toBe(true);
+    await expect.poll(()=>page.evaluate(async()=>!!navigator.serviceWorker.controller&&await caches.has('ember-demo-0.3.1-tactics1')),{timeout:15000}).toBe(true);
     const raw=serialize(newRun(37));
     await page.evaluate(raw=>localStorage.setItem('ember-dungeon-save-v1',raw),raw);
     worker=current;
     await page.evaluate(async()=>{const registration=await navigator.serviceWorker.getRegistration();await registration.update();});
     await expect.poll(()=>page.evaluate(async()=>{
       const registration=await navigator.serviceWorker.getRegistration();
-      const ready=await caches.has('ember-demo-0.2.0-fx1'), old=await caches.has('ember-demo-0.2.0');
+      const ready=await caches.has('ember-demo-0.3.2-reroll1'), old=await caches.has('ember-demo-0.3.1-tactics1');
       if(!ready||old||registration?.installing||registration?.waiting)return false;
-      return (await (await caches.open('ember-demo-0.2.0-fx1')).keys()).length===9;
+      return (await (await caches.open('ember-demo-0.3.2-reroll1')).keys()).length===9;
     }),{timeout:15000}).toBe(true);
-    const cached=await page.evaluate(async()=>({url:location.href,assets:(await (await caches.open('ember-demo-0.2.0-fx1')).keys()).map(r=>r.url)}));
+    const cached=await page.evaluate(async()=>({url:location.href,assets:(await (await caches.open('ember-demo-0.3.2-reroll1')).keys()).map(r=>r.url)}));
     assert.ok(cached.assets.includes(new URL('effects.js',cached.url).href),JSON.stringify(cached));
     await context.setOffline(true);await page.reload();await page.locator('[data-action="enter:0"]:not(:disabled)').waitFor();
     assert.equal(await page.evaluate(()=>localStorage.getItem('ember-dungeon-save-v1')),raw);
@@ -45,6 +45,6 @@ export async function checkCacheUpdate(browser,results){
     await page.waitForFunction(()=>!document.querySelector('#app').inert);
     assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('ember-dungeon-save-v1')).battle.rolls),1);
     assert.deepEqual(errors,[]);
-    results.push('Service Worker upgrade: old 0.2.0 cache replaced by fx1; effects.js cached; existing save retained; offline roll works under /ember-dice-dungeon/.');
+    results.push('Service Worker upgrade: old v0.3.1 tactics cache replaced by v0.3.2 reroll; effects.js cached; existing save retained; offline roll works under /ember-dice-dungeon/.');
   }finally{await context.close();await new Promise(resolve=>server.close(resolve));}
 }

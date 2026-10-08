@@ -1,7 +1,7 @@
-import { FACES, SKILLS, UPGRADES, CARDS, ENEMIES, RELICS, ROUTE, type Face, type SkillId, type Skill, type CardId, type EnemyId, type Intent, type RelicId } from './data.js';
+import { TACTICS_PER_TURN, FACES, SKILLS, UPGRADES, CARDS, ENEMIES, RELICS, ROUTE, type Face, type SkillId, type Skill, type CardId, type EnemyId, type Intent, type RelicId } from './data.js';
 
 export const VERSION = 1;
-export const RULES = '0.2.0';
+export const RULES = '0.3.2';
 export interface Die { id: number; faces: Face[]; faceIndex: number; override: Face | null; held: boolean; spent: boolean; modified: boolean }
 export interface Card { id: number; kind: CardId }
 export type Reward = { type: 'upgrade'; skill: SkillId; branch: 0 | 1 } | { type: 'relic'; id: RelicId } | { type: 'modify'; die: number; face: number; to: Face } | { type: 'gold'; amount: number };
@@ -72,7 +72,21 @@ function validPayment(s: State, skill: Skill, ids: number[]) {
   return true;
 }
 export function canSkill(s: State, id: SkillId) {
-  return s.screen === 'battle' && s.battle!.phase === 'allocate' && s.battle!.used.length < 2 && !s.battle!.used.includes(id) && payment(s,id) !== null;
+  return s.screen === 'battle' && s.battle!.rolls > 0 && s.battle!.used.length < 2 && !s.battle!.used.includes(id) && payment(s,id) !== null;
+}
+/** Shared by UI and dispatch: each card's timing depends on its effect. */
+export function cardUnavailable(s: State, id: number): string {
+  const b=s.battle;
+  if(s.screen!=='battle'||!b)return '当前不在玩家战斗回合。';
+  const c=b.hand.find(c=>c.id===id);
+  if(!c)return '手中没有这张牌。';
+  if(b.cardsUsed>=TACTICS_PER_TURN)return '本回合已用过战术。';
+  if(b.used.length>=2)return '本回合的主技能机会已用完。';
+  const cfg=CARDS[c.kind];
+  if(cfg.target&&!b.rolls)return '请先掷骰。';
+  if(cfg.target&&!s.dice.some(d=>!d.spent))return '没有尚未消耗的骰子。';
+  if(b.tp<cfg.cost)return `战术点不足：需要 ${cfg.cost} 点，当前 ${b.tp} 点。`;
+  return '';
 }
 export function preview(s: State, id: SkillId, ids = payment(s,id) || []) {
   const skill = skillFor(s,id), b = s.battle!;
@@ -189,20 +203,21 @@ export function dispatch(state: State, a: Action): State {
   } else if(['roll','hold','allocate','back','skill','card','end','emergency'].includes(a.type)) {
     need(s.screen==='battle'&&b,'不在战斗中。');
     if(a.type==='roll') {
-      need(b.phase==='roll'&&b.used.length===0&&b.rolls<3,'本回合不能继续普通投掷。');
-      const dice=s.dice.filter(d=>b.rolls===0||!d.held);need(dice.length,'请先解除至少一枚骰子的保留。');
+      need(b.used.length<2&&b.rolls<3,'本回合不能继续普通投掷。');
+      const dice=s.dice.filter(d=>!d.spent&&(b.rolls===0||!d.held));need(dice.length,'请先解除至少一枚未消耗骰子的保留。');
       if(b.rolls>0){b.randomized=true;s.stats.rerolls++;if(has(s,'wheel')&&!b.wheel&&dice.length>=3){b.boost+=3;b.wheel=true;}}
       for(const d of dice){d.faceIndex=Math.floor(random(s)*6);d.override=null;}
-      b.rolls++;note(s,b.rolls===1?'六骰落定。点击骰子保留，或收手分配技能。':`重掷 ${dice.length} 枚骰子。`);
+      b.phase=b.used.length?'allocate':'roll';b.rolls++;note(s,b.rolls===1?'六骰落定。锁定保留，或拖骰入技艺。':`重掷 ${dice.length} 枚骰子。`);
       if(b.enhanced&&b.rolls===3){damagePlayer(s,2,true);note(s,'铸命税：失去 2 生命。');if(!s.hp)lose(s,'铸命者 · 重掷代价');}
     } else if(a.type==='hold') {
-      need(b.phase==='roll'&&b.rolls>0&&!b.used.length,'当前不能保留骰子。');const d=s.dice.find(d=>d.id===a.die);need(d&&!d.spent,'骰子不可用。');d.held=!d.held;
+      need(b.rolls>0&&b.used.length<2,'当前不能保留骰子。');const d=s.dice.find(d=>d.id===a.die);need(d&&!d.spent,'骰子不可用。');d.held=!d.held;
     } else if(a.type==='allocate') {need(b.phase==='roll'&&b.rolls>0,'请先投掷六骰。');b.phase='allocate';}
     else if(a.type==='back') {need(b.phase==='allocate'&&!b.used.length,'首招后不能返回投掷。');b.phase='roll';}
     else if(a.type==='skill') {
       need(SKILLS.some(x=>x.id===a.skill)&&canSkill(s,a.skill),'技能不可用，或本回合已经使用。');
       const skill=skillFor(s,a.skill);need(validPayment(s,skill,a.dice),'投入的骰子不满足技能条件。');
       const effect=preview(s,a.skill,a.dice);
+      b.phase='allocate';
       for(const id of a.dice)s.dice[id].spent=true;
       damageEnemy(s,effect.damage,effect.pierce);s.block+=effect.block;
       if(skill.damage){b.boost=0;b.attacked=true;}
@@ -212,10 +227,10 @@ export function dispatch(state: State, a: Action): State {
       note(s,`${skill.name}：${effect.damage?`${effect.damage}${effect.pierce?' 穿透':' 伤害'}`:''}${effect.block?` +${effect.block} 格挡`:''}${effect.extra?`，铁环追击 ${effect.extra}`:''}。`);
       if(!b.hp)victory(s);else if(b.used.length===2)endTurn(s);
     } else if(a.type==='card') {
-      need(b.rolls>0&&!b.used.length&&b.cardsUsed<2,'只能在首招前使用战术牌，每回合最多两张。');
-      const c=b.hand.find(c=>c.id===a.id);need(c,'手中没有这张牌。');const config=CARDS[c.kind];need(b.tp>=config.cost,'战术点不足。');
+      const reason=cardUnavailable(s,a.id);need(!reason,reason);
+      const c=b.hand.find(c=>c.id===a.id)!;const config=CARDS[c.kind];
       let d: Die | undefined;
-      if(config.target){d=s.dice.find(d=>d.id===a.die);need(d&&!d.spent,'请选择一枚可用骰子。');}
+      if(config.target){d=s.dice.find(d=>d.id===a.die);need(d&&!d.spent,'请选择一枚尚未消耗的骰子。');}
       if(c.kind==='calibrate')need(a.face&&['sword','shield','fire'].includes(a.face),'请选择目标符号。');
       b.tp-=config.cost;b.cardsUsed++;b.hand=b.hand.filter(x=>x.id!==c.id);b.discard.push(c);
       if(c.kind==='armor')s.block+=4;
@@ -251,10 +266,10 @@ export function dispatch(state: State, a: Action): State {
 
 export function serialize(s: State) { return JSON.stringify(s); }
 /** Validate all fields used by rendering and transitions before replacing a live save. */
-export function deserialize(raw: string): State {
+export function deserialize(raw: string, acceptLegacy = false): State {
   need(raw.length<200000,'存档文件过大。');
   let s: State; try {s=JSON.parse(raw);} catch {throw new RuleError('文件不是有效的 JSON 存档。');}
-  need(s&&typeof s==='object'&&s.version===VERSION&&s.rules===RULES,'存档格式或规则版本不兼容，请保留原文件。');
+  need(s&&typeof s==='object'&&s.version===VERSION&&(s.rules===RULES||(acceptLegacy&&['0.2.0','0.3.0','0.3.1'].includes(s.rules))),'存档格式或规则版本不兼容，请保留原文件。');
   const int=(n:unknown,min=0,max=1e9)=>typeof n==='number'&&Number.isInteger(n)&&n>=min&&n<=max;
   const str=(v:unknown)=>typeof v==='string'&&v.length<=250;
   const arr=(v:unknown,max:number)=>Array.isArray(v)&&v.length<=max;
@@ -284,5 +299,8 @@ export function deserialize(raw: string): State {
   if(s.screen==='reward')need(s.rewards.length>0&&s.rewards.every(r=>rewardLegal(s,r))&&s.battle&&s.battle.hp===0&&s.hp>0&&s.floor<7,'奖励状态无效。');
   if(s.screen==='lost')need(s.hp===0,'失败状态无效。');
   if(s.screen==='won')need(s.floor===7&&s.hp>0&&s.battle?.enemy==='boss'&&s.battle.hp===0,'通关状态无效。');
+  // Explicitly accepted earlier saves retain every outcome, RNG and spent resource.
+  // A historical cardsUsed=2 stays exhausted until the next turn resets it.
+  s.rules=RULES;
   return s;
 }

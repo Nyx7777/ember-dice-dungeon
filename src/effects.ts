@@ -7,7 +7,7 @@ export interface Effects { dice: number[]; hits: Hit[] }
 export function effectsFor(before: State, after: State, action: Action): Effects {
   const effects: Effects = { dice: [], hits: [] }, b = before.battle;
   if (before.screen !== 'battle' || !b || !after.battle) return effects;
-  if (action.type === 'roll') effects.dice = before.dice.filter(d => !b.rolls || !d.held).map(d => d.id);
+  if (action.type === 'roll') effects.dice = before.dice.filter(d => !d.spent && (!b.rolls || !d.held)).map(d => d.id);
   if (action.type === 'card' && b.hand.find(c => c.id === action.id)?.kind === 'retry') effects.dice = [action.die!];
   const skill = action.type === 'skill' ? preview(before, action.skill, action.dice) : null;
   if (skill) {

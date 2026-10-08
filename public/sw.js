@@ -1,4 +1,4 @@
-const CACHE = 'ember-demo-0.2.0-fx1';
+const CACHE = 'ember-demo-0.3.2-reroll1';
 const ASSETS = ['./','./index.html','./style.css','./app.js','./effects.js','./engine.js','./data.js','./icon.svg','./manifest.webmanifest'];
 self.addEventListener('install', event => { event.waitUntil(caches.open(CACHE).then(c=>c.addAll(ASSETS)).then(()=>self.skipWaiting())); });
 self.addEventListener('activate', event => { event.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k.startsWith('ember-demo-')&&k!==CACHE).map(k=>caches.delete(k)))).then(()=>self.clients.claim())); });

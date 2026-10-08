@@ -34,7 +34,7 @@ export async function checkEffects(page,results){
     await idle();assert.equal(await page.locator('.dice-cube').count(),0);assert.equal(await read(),committed);
     const settled=JSON.parse(committed);
     for(const d of settled.dice)assert.ok((await page.locator(`[data-action="die:${d.id}"] > .symbol`).getAttribute('class')).includes(symbol(d)));
-    await click('die:0');await click('roll');await page.locator('.dice-cube').first().waitFor();
+    await click('hold:0');await click('roll');await page.locator('.dice-cube').first().waitFor();
     assert.equal(await page.locator('[data-action="die:0"] .dice-cube').count(),0);assert.equal(await page.locator('.dice-cube').count(),5);
     const savedDuringFlight=await read();await page.reload();await page.locator('.dice-tray').waitFor();assert.equal(await read(),savedDuringFlight);
     assert.equal(await page.locator('.dice-cube').count(),0);
@@ -43,11 +43,11 @@ export async function checkEffects(page,results){
 
   s=dispatch(s,{type:'roll'});s.dice[0].held=true;s.dice[0].modified=true;s.dice[0].faces[0]='fire';
   await load(s);const retry=s.battle.hand.find(c=>c.kind==='retry');assert.ok(retry);
-  await click(`card:${retry.id}`);await click('confirm-card');await page.locator('.dice-cube').waitFor();
+  await click('tactics');await click(`card:${retry.id}`);await click('confirm-card');await page.locator('.dice-cube').waitFor();
   assert.equal(await page.locator('.dice-cube').count(),1);assert.equal(await page.locator('.cube-face.fire').count(),s.dice[0].faces.filter(f=>f==='fire').length);
   await idle();results.push('Targeted card retry animates only its target and uses the modified six-face distribution.');
 
-  s=battle();s.battle.block=8;await load(s);await click('skill:cleave');await click('confirm-skill');
+  s=battle();s.battle.block=8;await load(s);await click('skill:cleave');await click('cast');
   await page.locator('.hit-number.enemy').waitFor();assert.equal(await page.locator('.hit-number.enemy').textContent(),'−5 · 格挡 8');
   await page.waitForTimeout(130);
   await page.screenshot({path:'test-results/enemy-hit-390.png'});await idle();
@@ -56,7 +56,7 @@ export async function checkEffects(page,results){
   await page.waitForFunction(()=>document.querySelector('.hit-number.player')?.textContent==='−4 · 格挡 2');
   await page.waitForTimeout(130);
   await page.screenshot({path:'test-results/player-hit-390.png'});await idle();assert.equal(JSON.parse(await read()).hp,56);
-  s=battle();s.battle.hp=2;await load(s);await click('skill:cleave');await click('confirm-skill');
+  s=battle();s.battle.hp=2;await load(s);await click('skill:cleave');await click('cast');
   await page.locator('.hit-number.enemy').waitFor();assert.equal(JSON.parse(await read()).screen,'reward');assert.equal(await page.locator('.battle-view').count(),1);
   await idle();assert.equal(await page.locator('.reward-card').count(),3);
   s=battle();s.hp=2;await load(s);await click('end');await page.locator('.hit-number.player').waitFor();

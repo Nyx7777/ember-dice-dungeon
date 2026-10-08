@@ -5,6 +5,9 @@ import {newRun,dispatch,serialize,deserialize} from '../dist/engine.js';
 import {nextAction} from './helpers.mjs';
 import {checkEffects} from './effects-browser.mjs';
 import {checkCacheUpdate} from './cache-update.mjs';
+import {checkInteraction} from './interaction-browser.mjs';
+import {checkTactics} from './tactics-browser.mjs';
+import {checkRerolls} from './reroll-browser.mjs';
 const browser=await chromium.launch({channel:'msedge',headless:true});
 const dir='test-results';await mkdir(dir,{recursive:true});
 const results=[],errors=[];
@@ -16,7 +19,7 @@ const click=async(action)=>{await page.waitForFunction(()=>!document.querySelect
 try{
   await page.goto('http://localhost:4173');await page.locator('[data-action="new"]').waitFor();
   await page.screenshot({path:`${dir}/home-390.png`,fullPage:true});
-  await click('new');await click('enter:0');await click('roll');await click('die:0');
+  await click('new');await click('enter:0');await click('roll');await click('hold:0');
   const before=await read();await page.reload();await page.locator('.dice-tray').waitFor();assert.deepEqual(await read(),before);
   results.push('Save / refresh preserves rolled dice, lock state and RNG.');
   for(const [width,height] of [[390,844],[360,640],[1280,900]]){
@@ -28,18 +31,21 @@ try{
     await page.screenshot({path:`${dir}/battle-${width}.png`});results.push(`Viewport ${width}×${height}: no page scroll, all six dice and bottom actions >=44px and on screen.`);
   }
   await page.setViewportSize({width:390,height:844});
-  await click('allocate');await click('skill:cleave');const preCancel=await read();await click('close');assert.deepEqual(await read(),preCancel);results.push('Skill preview cancellation has no state or RNG effects.');
+  await click('allocate');await click('skill:cleave');const preCancel=await read();await click('clear-draft');assert.deepEqual(await read(),preCancel);results.push('Skill preview cancellation has no state or RNG effects.');
   await checkEffects(page,results);
+  await checkInteraction(page,results);
+  await checkTactics(page,results);
+  await checkRerolls(page,results);
   // Reset to a known genuine run, then execute every action through actual UI controls.
   await page.evaluate(([key,raw])=>localStorage.setItem(key,raw),[key,serialize(newRun(1))]);await page.reload();
   let count=0;
   while(count++<1500){
     const s=await read();if(['won','lost'].includes(s.screen))break;const a=nextAction(s);
     if(a.type==='enter'||a.type==='reward'||a.type==='buy')await click(`${a.type}:${a.index}`);
-    else if(a.type==='hold')await click(`die:${a.die}`);
+    else if(a.type==='hold')await click(`hold:${a.die}`);
     else if(a.type==='event')await click(`event:${a.choice}`);
-    else if(a.type==='skill'){await click(`skill:${a.skill}`);await click('confirm-skill');}
-    else if(a.type==='card'){await click(`card:${a.id}`);await click('confirm-card');}
+    else if(a.type==='skill'){await click(`skill:${a.skill}`);await click('cast');}
+    else if(a.type==='card'){await click('tactics');await click(`card:${a.id}`);await click('confirm-card');}
     else await click(a.type);
     const after=await read();assert.equal(after.seq,s.seq+1,`UI action did not commit ${JSON.stringify(a)}`);
     deserialize(JSON.stringify(after));

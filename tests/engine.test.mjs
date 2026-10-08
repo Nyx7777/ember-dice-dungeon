@@ -1,9 +1,27 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {newRun,dispatch,payment,preview,serialize,deserialize,rewardPool,rewardLegal,generateRewards,skillFor,price} from '../dist/engine.js';
+import {RULES,newRun,dispatch,payment,preview,serialize,deserialize,rewardPool,rewardLegal,generateRewards,skillFor,price} from '../dist/engine.js';
 import {SKILLS,RELICS,ENEMIES} from '../dist/data.js';
 import {battle,use,simulate} from './helpers.mjs';
 const reject=(s,a)=>{const before=serialize(s);assert.throws(()=>dispatch(s,a));assert.equal(serialize(s),before);};
+test('UI03 confirm from roll commits allocation and skill atomically; failed payment keeps roll state',()=>{
+  let s=dispatch(battle(),{type:'back'});const before=serialize(s),rng=s.rng;
+  reject(s,{type:'skill',skill:'cleave',dice:[0,1]});preview(s,'cleave');assert.equal(serialize(s),before);
+  s=use(s,'cleave');assert.equal(s.seq,JSON.parse(before).seq+1);assert.equal(s.rng,rng);assert.equal(s.battle.phase,'allocate');
+  reject(s,{type:'hold',die:0});reject(s,{type:'back'});const rerolled=dispatch(s,{type:'roll'});assert.equal(rerolled.battle.rolls,2);assert.deepEqual(rerolled.battle.used,['cleave']);
+});
+test('UI03 before first skill, allocation does not prevent lock or reroll or refund rolls',()=>{
+  let s=battle();s=dispatch(s,{type:'hold',die:0});const face=s.dice[0].faceIndex;
+  s=dispatch(s,{type:'roll'});assert.equal(s.battle.rolls,2);assert.equal(s.dice[0].faceIndex,face);assert.equal(s.battle.phase,'roll');
+});
+test('UI03 legacy save migration requires opt-in, preserves RNG and already used cards',()=>{
+  const s=battle();s.rules='0.2.0';s.battle.cardsUsed=2;const raw=serialize(s);
+  assert.throws(()=>deserialize(raw));const migrated=deserialize(raw,true);
+  assert.deepEqual(migrated,{...s,rules:RULES});assert.equal(serialize(s),raw);assert.deepEqual(deserialize(serialize(migrated)),migrated);
+  reject(migrated,{type:'card',id:migrated.battle.hand[0].id,die:0});
+  const next=dispatch(migrated,{type:'end'});assert.equal(next.battle.cardsUsed,0);
+  for(const patch of [{rules:'0.1.0'},{rules:'future'},{version:999},{rng:-1}])assert.throws(()=>deserialize(serialize({...s,...patch}),true));
+});
 test('V01/02 first roll, two rerolls, held dice and zero-dice rejection',()=>{
   let s=dispatch(newRun(1),{type:'enter',index:0});reject(s,{type:'hold',die:0});s=dispatch(s,{type:'roll'});
   s=dispatch(s,{type:'hold',die:0});const face=s.dice[0].faceIndex;
@@ -24,16 +42,16 @@ test('V05 six shields, emergency and no-skill end remain possible',()=>{
   let s=battle(Array(6).fill('shield'));s=use(s,'guard');reject(s,{type:'skill',skill:'guard',dice:[2,3]});reject(s,{type:'emergency'});s=dispatch(s,{type:'end'});assert.equal(s.hp,57);
   s=dispatch(battle(),{type:'emergency'});assert.equal(s.hp,55);assert.equal(s.battle.turn,2);
 });
-test('V06 pure preview; return does not refund rolls; first skill locks dice and cards',()=>{
+test('V06 pure preview; return does not refund rolls; first skill preserves consumed dice through further rerolls',()=>{
   let s=battle();const old=serialize(s);preview(s,'cleave');payment(s,'cleave');assert.equal(serialize(s),old);
   s=dispatch(s,{type:'back'});assert.equal(s.battle.rolls,1);s=dispatch(s,{type:'allocate'});s=use(s,'cleave');
-  reject(s,{type:'back'});reject(s,{type:'roll'});reject(s,{type:'card',id:s.battle.hand[0].id});
+  reject(s,{type:'back'});reject(s,{type:'hold',die:0});assert.equal(dispatch(s,{type:'roll'}).battle.rolls,2);
 });
-test('V07 card targets are transactional; point costs and two-card cap',()=>{
+test('V07 card targets are transactional; point costs and one-card cap',()=>{
   let s=battle();s.battle.hand=[{id:0,kind:'retry'},{id:2,kind:'calibrate'},{id:3,kind:'armor'}];s.battle.tp=3;
   reject(s,{type:'card',id:0});reject(s,{type:'card',id:2,die:0,face:'invalid'});
   s.dice[0].held=true;s=dispatch(s,{type:'card',id:0,die:0});assert.equal(s.dice[0].held,false);assert.equal(s.battle.rolls,1);assert.equal(s.battle.randomized,true);
-  s=dispatch(s,{type:'card',id:2,die:0,face:'fire'});assert.equal(s.dice[0].override,'fire');assert.equal(s.battle.tp,0);s.battle.tp=3;reject(s,{type:'card',id:3});
+  reject(s,{type:'card',id:2,die:0,face:'fire'});assert.equal(s.battle.tp,2);s=dispatch(s,{type:'end'});assert.equal(s.battle.cardsUsed,0);s=dispatch(s,{type:'roll'});s=dispatch(s,{type:'card',id:2,die:0,face:'fire'});assert.equal(s.dice[0].override,'fire');assert.equal(s.battle.tp,1);s.battle.tp=3;reject(s,{type:'card',id:3});
 });
 test('V07 full hand preserves deck top, empty deck shuffles discard, empty both skips',()=>{
   let s=battle();s.battle.hand=[0,1,2,3].map(id=>({id,kind:'retry'}));s.battle.deck=[{id:4,kind:'armor'}];const top=structuredClone(s.battle.deck);
@@ -125,7 +143,7 @@ test('V03 second canonical 3+3 combination and five-fire ultimate consume exact 
   s=battle(['fire','fire','fire','fire','fire','sword']);s.battle.hp=70;s=use(s,'inferno');assert.equal(s.battle.hp,42);assert.equal(s.block,10);assert.equal(s.dice.filter(d=>d.spent).length,5);
 });
 test('V07 insufficient tactics, pre-roll play and additive momentum checked',()=>{
-  let s=dispatch(newRun(1),{type:'enter',index:0});reject(s,{type:'card',id:s.battle.hand[0].id});
+  let s=dispatch(newRun(1),{type:'enter',index:0});s.battle.hand=[{id:0,kind:'retry'}];reject(s,{type:'card',id:0,die:0});
   s=battle();s.battle.hand=[{id:2,kind:'calibrate'}];s.battle.tp=1;reject(s,{type:'card',id:2,die:0,face:'sword'});
   s.battle.hand=[{id:5,kind:'momentum'}];s.battle.boost=3;s=dispatch(s,{type:'card',id:5});assert.equal(preview(s,'cleave').damage,19);s=use(s,'guard');assert.equal(s.battle.boost,6);s=use(s,'cleave');assert.equal(s.battle.boost,0);
 });
